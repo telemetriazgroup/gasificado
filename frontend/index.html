@@ -28,6 +28,14 @@
       <button class="btn" id="logoutAdmin">Salir</button>
     </div>
 
+    <div class="tabs admin-tabs">
+      <button class="tab active" data-admin-tab="monitor">Monitor TCP</button>
+      <button class="tab" data-admin-tab="rawdata">Datos raw</button>
+      <button class="tab" data-admin-tab="audit">Trazabilidad</button>
+      <button class="tab" data-admin-tab="display">Vista cliente</button>
+    </div>
+
+    <div id="adminMonitor" class="admin-panel">
     <div class="toolbar">
       <label>Dispositivo<select id="deviceSelect"><option value="">— seleccionar —</option></select></label>
       <button class="btn" id="refreshDevices">Actualizar</button>
@@ -64,10 +72,10 @@
     <div class="hint">Enter = enviar | Shift+Enter = nueva línea | ↑/↓ = historial</div>
 
     <div class="dashboard">
-      <div class="card"><div class="label">Temperatura</div><div class="value" id="valTemp">— °C</div></div>
-      <div class="card"><div class="label">Gas (PPM)</div><div class="value" id="valGas">—</div></div>
-      <div class="card"><div class="label">Última conexión</div><div class="value" id="valLastSeen" style="font-size:1rem">—</div></div>
-      <div class="card"><div class="label">IMEI</div><div class="value" id="valImei" style="font-size:1rem">—</div></div>
+      <div class="card"><div class="label">Temp. real</div><div class="value" id="valTemp">— °C</div></div>
+      <div class="card"><div class="label">Gas real (PPM)</div><div class="value" id="valGas">—</div></div>
+      <div class="card"><div class="label">Temp. cliente</div><div class="value" id="valTempClient">— °C</div></div>
+      <div class="card"><div class="label">Gas cliente</div><div class="value" id="valGasClient">—</div></div>
     </div>
 
     <div class="filters">
@@ -77,7 +85,72 @@
     </div>
     <div class="charts">
       <div class="chart-box"><h3>Temperatura (°C)</h3><canvas id="tempChart"></canvas></div>
-      <div class="chart-box"><h3>Gas (PPM)</h3><canvas id="gasChart"></canvas></div>
+      <div class="chart-box"><h3>Gas real (PPM)</h3><canvas id="gasChart"></canvas></div>
+    </div>
+    <div class="card" style="margin-top:10px">
+      <div class="label">Última conexión · IMEI</div>
+      <div id="valLastSeen" style="font-size:0.95rem">—</div>
+      <div id="valImei" style="font-size:0.95rem;margin-top:4px">—</div>
+    </div>
+    </div>
+
+    <div id="adminRawData" class="admin-panel hidden">
+      <div class="filters">
+        <label>Dispositivo<select id="rawDeviceSelect"><option value="">— todos —</option></select></label>
+        <label>Desde <input type="datetime-local" id="rawFrom"></label>
+        <label>Hasta <input type="datetime-local" id="rawTo"></label>
+        <button class="btn" id="rawSearch">Buscar</button>
+        <button class="btn" id="rawLogRefresh">Ver log archivo</button>
+      </div>
+      <div class="history-table-wrap">
+        <table class="history-table">
+          <thead><tr><th>Fecha GMT-5</th><th>IMEI</th><th>Temp real</th><th>Gas real</th><th>Temp cliente</th><th>Gas cliente</th><th>Mensaje</th></tr></thead>
+          <tbody id="rawTableBody"></tbody>
+        </table>
+      </div>
+      <div class="section-title">Archivo log TCP (puerto 9070/backend)</div>
+      <div class="filters">
+        <select id="logFileSelect"></select>
+        <button class="btn" id="logLoadBtn">Cargar</button>
+        <a id="logDownload" class="btn" href="#">Descargar</a>
+      </div>
+      <pre id="logFileContent" class="log-viewer"></pre>
+    </div>
+
+    <div id="adminAudit" class="admin-panel hidden">
+      <div class="filters">
+        <label>Dispositivo<select id="auditDeviceSelect"><option value="">— todos —</option></select></label>
+        <label>Desde <input type="datetime-local" id="auditFrom"></label>
+        <label>Hasta <input type="datetime-local" id="auditTo"></label>
+        <button class="btn" id="auditSearch">Buscar</button>
+      </div>
+      <div class="history-table-wrap">
+        <table class="history-table">
+          <thead><tr><th>Fecha exacta GMT-5</th><th>Comando</th><th>Origen</th><th>Usuario</th><th>Estado</th><th>ACK</th><th>IMEI</th></tr></thead>
+          <tbody id="auditTableBody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div id="adminDisplay" class="admin-panel hidden">
+      <div class="setpoint-form card">
+        <h3>Configuración de datos mostrados al cliente</h3>
+        <p class="hint">El sistema guarda datos reales y muestra al cliente la versión adaptada según estas reglas.</p>
+        <label><input type="checkbox" id="cfgManual"> Usar valores manuales fijos</label>
+        <label>Gas manual (cliente)<input type="number" id="cfgManualGas" step="0.1"></label>
+        <label>Temp. manual (cliente)<input type="number" id="cfgManualTemp" step="0.1"></label>
+        <hr>
+        <label>Gas divisor<input type="number" id="cfgGasDiv" step="1" value="10"></label>
+        <label>Gas tope bajo (PPM real &lt;)<input type="number" id="cfgGasLowMax" value="1000"></label>
+        <label>Gas display máx. bajo<input type="number" id="cfgGasLowDisp" step="0.1" value="100"></label>
+        <label>Gas rango medio PPM<input type="number" id="cfgGasMidMax" value="2000"></label>
+        <label>Gas display medio máx.<input type="number" id="cfgGasMidDisp" step="0.1" value="110.9"></label>
+        <label>Gas display alto (&gt;2000)<input type="number" id="cfgGasHigh" step="0.1" value="120.1"></label>
+        <label>Temp. raw máx. (×10)<input type="number" id="cfgTempRawMax" value="800"></label>
+        <label>Temp. display tope<input type="number" id="cfgTempCap" step="0.1" value="80.1"></label>
+        <button class="btn btn-primary" id="cfgSave">Guardar configuración</button>
+        <p id="cfgMsg" class="hint"></p>
+      </div>
     </div>
   </div>
 

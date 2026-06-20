@@ -40,7 +40,9 @@ class CommandLog(Base):
     command: Mapped[str] = mapped_column(String(100))
     status: Mapped[str] = mapped_column(String(30), default="sent")
     response: Mapped[str | None] = mapped_column(Text, nullable=True)
-    sent_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    triggered_by: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    source: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    sent_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
     ack_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
 
@@ -64,3 +66,12 @@ class SetPoint(Base):
     updated_by: Mapped[str] = mapped_column(String(50))
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     applied: Mapped[bool] = mapped_column(default=False)
+
+
+class DisplayConfig(Base):
+    __tablename__ = "display_config"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    config_json: Mapped[str] = mapped_column(Text)
+    updated_by: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)

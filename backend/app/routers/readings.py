@@ -8,10 +8,10 @@ from app.auth import User, require_admin, require_client_or_admin
 from app.config import settings
 from app.database import get_db
 from app.models import CommandLog, Device, Reading
-from app.schemas import ChartData, ChartPoint, CommandRequest, CommandResponse, LatestData, ReadingOut
+from app.reading_mapper import build_chart_point, build_reading_out, get_rules
+from app.schemas import ChartData, CommandRequest, CommandResponse, LatestData, ReadingOut
 from app.tcp_client import ensure_device_on_bridge, post_tcp_command
 from app.timezone_util import from_utc_naive, parse_incoming_timestamp
-from app.config import settings
 import httpx
 
 router = APIRouter(prefix="/api", tags=["readings"])
@@ -38,7 +38,7 @@ def list_devices(
 async def get_latest(
     imei: str | None = Query(None),
     db: Session = Depends(get_db),
-    _user: User = Depends(require_client_or_admin),
+    user: User = Depends(require_client_or_admin),
 ):
     device_q = db.query(Device)
     if imei:
@@ -65,6 +65,11 @@ async def get_latest(
         reading_q = reading_q.filter(Reading.imei == device.imei)
     latest_reading = reading_q.order_by(desc(Reading.received_at)).first()
 
+    rules = get_rules(db)
+    reading_out = (
+        build_reading_out(latest_reading, user.role, rules) if latest_reading else None
+    )
+
     last_cmd = None
     target_imei = imei or (device.imei if device else None)
     if target_imei:
@@ -78,13 +83,15 @@ async def get_latest(
             last_cmd = {
                 "command": cmd.command,
                 "status": cmd.status,
+                "triggered_by": cmd.triggered_by,
+                "source": cmd.source,
                 "sent_at": from_utc_naive(cmd.sent_at).isoformat() if cmd.sent_at else None,
                 "ack_at": from_utc_naive(cmd.ack_at).isoformat() if cmd.ack_at else None,
             }
 
     return LatestData(
         device=device,
-        latest_reading=latest_reading,
+        latest_reading=reading_out,
         last_command=last_cmd,
     )
 
@@ -97,7 +104,7 @@ def get_readings(
     message_type: str | None = Query(None),
     limit: int = Query(500, le=5000),
     db: Session = Depends(get_db),
-    _user: User = Depends(require_client_or_admin),
+    user: User = Depends(require_client_or_admin),
 ):
     q = db.query(Reading)
     if imei:
@@ -108,7 +115,9 @@ def get_readings(
         q = q.filter(Reading.received_at <= parse_incoming_timestamp(to_date))
     if message_type:
         q = q.filter(Reading.message_type == message_type)
-    return q.order_by(desc(Reading.received_at)).limit(limit).all()
+    rows = q.order_by(desc(Reading.received_at)).limit(limit).all()
+    rules = get_rules(db)
+    return [build_reading_out(r, user.role, rules) for r in rows]
 
 
 @router.get("/chart", response_model=ChartData)
@@ -117,7 +126,7 @@ def get_chart_data(
     from_date: datetime | None = Query(None, alias="from"),
     to_date: datetime | None = Query(None, alias="to"),
     db: Session = Depends(get_db),
-    _user: User = Depends(require_client_or_admin),
+    user: User = Depends(require_client_or_admin),
 ):
     q = db.query(Reading).filter(Reading.imei == imei, Reading.message_type == "sensor")
     if from_date:
@@ -125,24 +134,16 @@ def get_chart_data(
     if to_date:
         q = q.filter(Reading.received_at <= parse_incoming_timestamp(to_date))
     rows = q.order_by(Reading.received_at).all()
-    return ChartData(
-        imei=imei,
-        points=[
-            ChartPoint(
-                timestamp=from_utc_naive(r.received_at),
-                temperature=r.temperature,
-                gas_ppm=r.gas_ppm,
-            )
-            for r in rows
-        ],
-    )
+    rules = get_rules(db)
+    points = [build_chart_point(r, user.role, rules) for r in rows]
+    return ChartData(imei=imei, points=points)
 
 
 @router.post("/commands", response_model=CommandResponse)
 async def send_command(
     body: CommandRequest,
     db: Session = Depends(get_db),
-    _user: User = Depends(require_admin),
+    user: User = Depends(require_admin),
 ):
     device = db.query(Device).filter(Device.imei == body.imei).first()
     if not device:
@@ -150,7 +151,13 @@ async def send_command(
 
     await ensure_device_on_bridge(db, body.imei)
 
-    cmd_log = CommandLog(imei=body.imei, command=body.command, status="sent")
+    cmd_log = CommandLog(
+        imei=body.imei,
+        command=body.command,
+        status="sent",
+        triggered_by=user.username,
+        source=body.source or "manual",
+    )
     db.add(cmd_log)
     db.commit()
 

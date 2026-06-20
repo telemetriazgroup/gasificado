@@ -105,11 +105,15 @@ El script original sigue en el repositorio como referencia. En producción usar 
 
 
 Rol	Usuario	Contraseña	Qué ve
+
+
 Administrador
-admin
-ProyectoZtrack2026!
-Terminal serial, comandos TCP, gráficas
+user:admin
+pass :ProyectoZtrack2026!
+
 Cliente
-gasificado
-gasificado2026
-Tiempo real, histórico, set points (sin serial)
+user : gasificado
+pass : gasificado2026
+(sin serial)
+
+Establecer que la vista del cliente gasificado no se vean datos elevados de gas . el dato que llega de ppm debe ser mostrado al cliente divido entre 10 si es menor de 1000 , osea le muestra 100.0 como maximo y cualquier valor elevado  de 1000 a 2000 lo muestra en un rango de 100.0 a 110.9 y cualquier valor por encima le muestra como 120.1 en los gases en la temperatura cualquier valor por encima de 800 se muestra como 80.1 ya que alli tambien se divide entre 10 , ahora debe permitir modificar lo que se muestra al cliente desde el administrador , es decir el sistema procesa 2 datos en paralelo . al super admin le muestra normal y al cliente le muestra la version adapatada de datos o lo que el admin modifico , el admin deb poder ver todo lo que llego al puerto 9070 que se debe guardar en un archivo para consulta , y debe poder ver los datos en tabla tambien y la hora exacta en la que acciono los botones de control , una trazabilidad de eso

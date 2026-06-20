@@ -373,6 +373,26 @@ body {
   background: #ececec;
 }
 
+.log-viewer {
+  background: #111;
+  color: #eee;
+  padding: 10px;
+  max-height: 280px;
+  overflow: auto;
+  font-size: 12px;
+  border: 1px solid #666;
+}
+
+.admin-panel {
+  margin-top: 8px;
+}
+
+hr {
+  border: none;
+  border-top: 1px solid #bbb;
+  margin: 8px 0;
+}
+
 @media (max-width: 900px) {
   .dashboard {
     grid-template-columns: repeat(2, 1fr);

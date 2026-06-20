@@ -110,9 +110,17 @@ function initAdmin() {
     adminSendCommand(document.getElementById("commandInput").value);
     document.getElementById("commandInput").value = "";
   });
-  document.querySelectorAll("#adminApp .quick-cmd").forEach((btn) => {
-    btn.addEventListener("click", () => adminSendCommand(btn.dataset.cmd));
+  document.querySelectorAll("#adminMonitor .quick-cmd").forEach((btn) => {
+    btn.addEventListener("click", () => adminSendCommand(btn.dataset.cmd, btn.dataset.cmd));
   });
+  document.querySelectorAll(".admin-tabs .tab").forEach((tab) => {
+    tab.addEventListener("click", () => adminSwitchTab(tab.dataset.adminTab));
+  });
+  document.getElementById("rawSearch").addEventListener("click", adminLoadRawTable);
+  document.getElementById("auditSearch").addEventListener("click", adminLoadAudit);
+  document.getElementById("cfgSave").addEventListener("click", adminSaveDisplayConfig);
+  document.getElementById("logLoadBtn").addEventListener("click", adminLoadLogFile);
+  document.getElementById("rawLogRefresh").addEventListener("click", adminLoadLogFiles);
   document.getElementById("loadChart").addEventListener("click", adminLoadChart);
   document.getElementById("deviceSelect").addEventListener("change", () => {
     adminRefreshLatest();
@@ -123,9 +131,13 @@ function initAdmin() {
   adminInitCharts();
   adminConnectWs();
   setDefaultDateRange("fromDate", "toDate");
+  setDefaultDateRange("rawFrom", "rawTo");
+  setDefaultDateRange("auditFrom", "auditTo");
   adminLoadDevices().then(() => {
     adminRefreshLatest();
     adminLoadChart();
+    adminLoadDisplayConfig();
+    adminLoadLogFiles();
   });
   setInterval(adminRefreshLatest, 15000);
 }
@@ -173,8 +185,20 @@ function adminHandleWs(data) {
 }
 
 function adminUpdateDashboard(payload) {
-  if (payload.temperature != null) document.getElementById("valTemp").textContent = `${payload.temperature.toFixed(1)} °C`;
-  if (payload.gas_ppm != null) document.getElementById("valGas").textContent = `${payload.gas_ppm}`;
+  if (payload.temperature != null || payload.temperature_raw != null) {
+    const t = payload.temperature_raw ?? payload.temperature;
+    document.getElementById("valTemp").textContent = `${Number(t).toFixed(1)} °C`;
+  }
+  if (payload.gas_ppm != null || payload.gas_ppm_raw != null) {
+    const g = payload.gas_ppm_raw ?? payload.gas_ppm;
+    document.getElementById("valGas").textContent = `${g}`;
+  }
+  if (payload.temperature_display != null) {
+    document.getElementById("valTempClient").textContent = `${Number(payload.temperature_display).toFixed(1)} °C`;
+  }
+  if (payload.gas_display != null) {
+    document.getElementById("valGasClient").textContent = `${Number(payload.gas_display).toFixed(1)}`;
+  }
   if (payload.imei) document.getElementById("valImei").textContent = payload.imei;
 }
 
@@ -184,11 +208,20 @@ async function adminLoadDevices() {
   const sel = document.getElementById("deviceSelect");
   const current = sel.value;
   sel.innerHTML = '<option value="">— seleccionar —</option>';
+  ["rawDeviceSelect", "auditDeviceSelect"].forEach((id) => {
+    document.getElementById(id).innerHTML = '<option value="">— todos —</option>';
+  });
   devices.forEach((d) => {
     const opt = document.createElement("option");
     opt.value = d.imei;
     opt.textContent = `${d.imei} ${d.is_connected ? "(conectado)" : ""}`;
     sel.appendChild(opt);
+    ["rawDeviceSelect", "auditDeviceSelect"].forEach((id) => {
+      const o = document.createElement("option");
+      o.value = d.imei;
+      o.textContent = d.imei;
+      document.getElementById(id).appendChild(o);
+    });
   });
   if (current) sel.value = current;
   else if (devices.length === 1) sel.value = devices[0].imei;
@@ -229,7 +262,7 @@ async function adminRefreshLatest() {
   }
 }
 
-async function adminSendCommand(cmd) {
+async function adminSendCommand(cmd, source = "manual") {
   const imei = adminSelectedImei();
   if (!imei) {
     adminAppendTerminal("[ERROR] Seleccione un dispositivo", "err");
@@ -245,6 +278,7 @@ async function adminSendCommand(cmd) {
         imei,
         command: cmd.trim(),
         append_newline: document.getElementById("appendNewline").checked,
+        source,
       }),
     });
     const data = await res.json();
@@ -297,7 +331,131 @@ async function adminLoadChart() {
   if (to) url += `&to=${encodeURIComponent(new Date(to).toISOString())}`;
   const res = await apiFetch(url);
   const data = await res.json();
-  updateCharts(adminState.tempChart, adminState.gasChart, data.points);
+  updateCharts(adminState.tempChart, adminState.gasChart, data.points, false);
+}
+
+function adminSwitchTab(name) {
+  document.querySelectorAll(".admin-tabs .tab").forEach((t) => {
+    t.classList.toggle("active", t.dataset.adminTab === name);
+  });
+  document.getElementById("adminMonitor").classList.toggle("hidden", name !== "monitor");
+  document.getElementById("adminRawData").classList.toggle("hidden", name !== "rawdata");
+  document.getElementById("adminAudit").classList.toggle("hidden", name !== "audit");
+  document.getElementById("adminDisplay").classList.toggle("hidden", name !== "display");
+  if (name === "rawdata") adminLoadRawTable();
+  if (name === "audit") adminLoadAudit();
+  if (name === "display") adminLoadDisplayConfig();
+}
+
+async function adminLoadRawTable() {
+  const imei = document.getElementById("rawDeviceSelect").value;
+  const from = document.getElementById("rawFrom").value;
+  const to = document.getElementById("rawTo").value;
+  let url = `/api/admin/readings/raw?limit=300`;
+  if (imei) url += `&imei=${encodeURIComponent(imei)}`;
+  if (from) url += `&from=${encodeURIComponent(new Date(from).toISOString())}`;
+  if (to) url += `&to=${encodeURIComponent(new Date(to).toISOString())}`;
+  const res = await apiFetch(url);
+  const rows = await res.json();
+  const tbody = document.getElementById("rawTableBody");
+  tbody.innerHTML = "";
+  rows.forEach((r) => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td>${fmtDate(r.received_at)}</td><td>${r.imei}</td><td>${r.temperature_raw ?? r.temperature ?? "—"}</td><td>${r.gas_ppm_raw ?? r.gas_ppm ?? "—"}</td><td>${r.temperature_display ?? "—"}</td><td>${r.gas_display ?? "—"}</td><td>${r.raw_message}</td>`;
+    tbody.appendChild(tr);
+  });
+}
+
+async function adminLoadAudit() {
+  const imei = document.getElementById("auditDeviceSelect").value;
+  const from = document.getElementById("auditFrom").value;
+  const to = document.getElementById("auditTo").value;
+  let url = `/api/admin/commands/audit?limit=500`;
+  if (imei) url += `&imei=${encodeURIComponent(imei)}`;
+  if (from) url += `&from=${encodeURIComponent(new Date(from).toISOString())}`;
+  if (to) url += `&to=${encodeURIComponent(new Date(to).toISOString())}`;
+  const res = await apiFetch(url);
+  const rows = await res.json();
+  const tbody = document.getElementById("auditTableBody");
+  tbody.innerHTML = "";
+  rows.forEach((r) => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td>${fmtDate(r.sent_at)}</td><td>${r.command}</td><td>${r.source ?? "—"}</td><td>${r.triggered_by ?? "—"}</td><td>${r.status}</td><td>${r.ack_at ? fmtDate(r.ack_at) : "—"}</td><td>${r.imei}</td>`;
+    tbody.appendChild(tr);
+  });
+}
+
+async function adminLoadDisplayConfig() {
+  const res = await apiFetch("/api/admin/display-config");
+  const data = await res.json();
+  const c = data.config;
+  document.getElementById("cfgManual").checked = !!c.use_manual_override;
+  document.getElementById("cfgManualGas").value = c.manual_gas_display ?? "";
+  document.getElementById("cfgManualTemp").value = c.manual_temp_display ?? "";
+  document.getElementById("cfgGasDiv").value = c.gas_divisor;
+  document.getElementById("cfgGasLowMax").value = c.gas_low_max_ppm;
+  document.getElementById("cfgGasLowDisp").value = c.gas_low_display_max;
+  document.getElementById("cfgGasMidMax").value = c.gas_mid_max_ppm;
+  document.getElementById("cfgGasMidDisp").value = c.gas_mid_display_max;
+  document.getElementById("cfgGasHigh").value = c.gas_high_display;
+  document.getElementById("cfgTempRawMax").value = c.temp_raw_max;
+  document.getElementById("cfgTempCap").value = c.temp_display_cap;
+}
+
+async function adminSaveDisplayConfig() {
+  const config = {
+    use_manual_override: document.getElementById("cfgManual").checked,
+    manual_gas_display: parseFloat(document.getElementById("cfgManualGas").value) || null,
+    manual_temp_display: parseFloat(document.getElementById("cfgManualTemp").value) || null,
+    gas_divisor: parseFloat(document.getElementById("cfgGasDiv").value),
+    gas_low_max_ppm: parseInt(document.getElementById("cfgGasLowMax").value, 10),
+    gas_low_display_max: parseFloat(document.getElementById("cfgGasLowDisp").value),
+    gas_mid_min_ppm: parseInt(document.getElementById("cfgGasLowMax").value, 10),
+    gas_mid_max_ppm: parseInt(document.getElementById("cfgGasMidMax").value, 10),
+    gas_mid_display_min: parseFloat(document.getElementById("cfgGasLowDisp").value),
+    gas_mid_display_max: parseFloat(document.getElementById("cfgGasMidDisp").value),
+    gas_high_display: parseFloat(document.getElementById("cfgGasHigh").value),
+    temp_raw_max: parseInt(document.getElementById("cfgTempRawMax").value, 10),
+    temp_display_cap: parseFloat(document.getElementById("cfgTempCap").value),
+  };
+  const res = await apiFetch("/api/admin/display-config", {
+    method: "PUT",
+    body: JSON.stringify({ config }),
+  });
+  document.getElementById("cfgMsg").textContent = res.ok ? "Configuración guardada" : "Error al guardar";
+  adminRefreshLatest();
+}
+
+async function adminLoadLogFiles() {
+  const res = await apiFetch("/api/admin/logs/files");
+  const data = await res.json();
+  const sel = document.getElementById("logFileSelect");
+  sel.innerHTML = "";
+  (data.files || []).forEach((f) => {
+    const opt = document.createElement("option");
+    opt.value = f;
+    opt.textContent = f;
+    sel.appendChild(opt);
+  });
+  if (data.files?.length) adminLoadLogFile();
+}
+
+async function adminLoadLogFile() {
+  const filename = document.getElementById("logFileSelect").value;
+  if (!filename) return;
+  const res = await apiFetch(`/api/admin/logs/content?filename=${encodeURIComponent(filename)}&tail=500`);
+  const data = await res.json();
+  document.getElementById("logFileContent").textContent = (data.lines || []).join("\n");
+  document.getElementById("logDownload").onclick = async (e) => {
+    e.preventDefault();
+    const r = await apiFetch(`/api/admin/logs/download?filename=${encodeURIComponent(filename)}`);
+    const text = await r.text();
+    const blob = new Blob([text], { type: "text/plain" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = filename;
+    a.click();
+  };
 }
 
 /* ---------- CLIENT ---------- */
@@ -305,7 +463,7 @@ const clientState = { ws: null, histTempChart: null, histGasChart: null };
 
 function initClient() {
   document.getElementById("logoutClient").addEventListener("click", logout);
-  document.querySelectorAll(".tab").forEach((tab) => {
+  document.querySelectorAll("#clientApp .tab").forEach((tab) => {
     tab.addEventListener("click", () => clientSwitchTab(tab.dataset.tab));
   });
   document.getElementById("histSearch").addEventListener("click", clientLoadHistory);
@@ -326,7 +484,7 @@ function initClient() {
 }
 
 function clientSwitchTab(name) {
-  document.querySelectorAll(".tab").forEach((t) => t.classList.toggle("active", t.dataset.tab === name));
+  document.querySelectorAll("#clientApp .tab").forEach((t) => t.classList.toggle("active", t.dataset.tab === name));
   document.getElementById("tabRealtime").classList.toggle("hidden", name !== "realtime");
   document.getElementById("tabHistory").classList.toggle("hidden", name !== "history");
   document.getElementById("tabSetpoints").classList.toggle("hidden", name !== "setpoints");
@@ -373,8 +531,10 @@ function clientConnectWs() {
 }
 
 function clientUpdateLive(payload) {
-  if (payload.temperature != null) document.getElementById("liveTemp").textContent = `${payload.temperature.toFixed(1)} °C`;
-  if (payload.gas_ppm != null) document.getElementById("liveGas").textContent = `${payload.gas_ppm}`;
+  const temp = payload.temperature_display ?? payload.temperature;
+  const gas = payload.gas_display ?? payload.gas_ppm;
+  if (temp != null) document.getElementById("liveTemp").textContent = `${Number(temp).toFixed(1)} °C`;
+  if (gas != null) document.getElementById("liveGas").textContent = `${Number(gas).toFixed(1)}`;
   if (payload.imei) document.getElementById("liveImei").textContent = payload.imei;
   document.getElementById("liveUpdated").textContent = fmtDate(new Date().toISOString());
 }
@@ -479,24 +639,30 @@ async function clientLoadHistory() {
   const [chartRes, readRes] = await Promise.all([apiFetch(chartUrl), apiFetch(readUrl)]);
   const chartData = await chartRes.json();
   const rows = await readRes.json();
-  updateCharts(clientState.histTempChart, clientState.histGasChart, chartData.points);
+  updateCharts(clientState.histTempChart, clientState.histGasChart, chartData.points, true);
   const tbody = document.getElementById("histTableBody");
   tbody.innerHTML = "";
   rows.forEach((r) => {
     const tr = document.createElement("tr");
-    tr.innerHTML = `<td>${fmtDate(r.received_at)}</td><td>${r.temperature ?? "—"}</td><td>${r.gas_ppm ?? "—"}</td><td>${r.ip ?? "—"}</td>`;
+    const gas = r.gas_display ?? r.gas_ppm ?? "—";
+    const temp = r.temperature_display ?? r.temperature ?? "—";
+    tr.innerHTML = `<td>${fmtDate(r.received_at)}</td><td>${temp}</td><td>${gas}</td><td>${r.ip ?? "—"}</td>`;
     tbody.appendChild(tr);
   });
 }
 
 /* ---------- SHARED ---------- */
-function updateCharts(tempChart, gasChart, points) {
+function updateCharts(tempChart, gasChart, points, clientMode = false) {
   const labels = points.map((p) => fmtDate(p.timestamp));
   tempChart.data.labels = labels;
-  tempChart.data.datasets[0].data = points.map((p) => p.temperature);
+  tempChart.data.datasets[0].data = points.map((p) =>
+    clientMode ? (p.temperature_display ?? p.temperature) : p.temperature
+  );
   tempChart.update();
   gasChart.data.labels = labels;
-  gasChart.data.datasets[0].data = points.map((p) => p.gas_ppm);
+  gasChart.data.datasets[0].data = points.map((p) =>
+    clientMode ? (p.gas_display ?? p.gas_ppm) : p.gas_ppm
+  );
   gasChart.update();
 }
 

@@ -18,6 +18,8 @@ services:
     environment:
       DATABASE_URL: postgresql://gasificado:gasificado@db:5432/gasificado
       TCP_BRIDGE_URL: http://tcp_bridge:8081
+    volumes:
+      - rawlogs:/app/logs
     depends_on:
       db:
         condition: service_healthy
@@ -66,3 +68,4 @@ services:
 
 volumes:
   pgdata:
+  rawlogs:

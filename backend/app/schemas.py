@@ -33,11 +33,16 @@ class ReadingOut(BaseModel):
     id: int
     imei: str
     ip: str | None
-    temperature: float | None
-    gas_ppm: int | None
+    temperature: float | None = None
+    gas_ppm: int | None = None
+    temperature_raw: float | None = None
+    gas_ppm_raw: int | None = None
+    temperature_display: float | None = None
+    gas_display: float | None = None
     raw_message: str
     message_type: str
     received_at: datetime
+    is_raw: bool = True
 
     @field_serializer("received_at")
     def serialize_received(self, value: datetime):
@@ -69,6 +74,7 @@ class CommandRequest(BaseModel):
     imei: str
     command: str
     append_newline: bool = True
+    source: str | None = None
 
 
 class CommandResponse(BaseModel):
@@ -79,8 +85,10 @@ class CommandResponse(BaseModel):
 
 class ChartPoint(BaseModel):
     timestamp: datetime
-    temperature: float | None
-    gas_ppm: int | None
+    temperature: float | None = None
+    gas_ppm: int | None = None
+    gas_display: float | None = None
+    temperature_display: float | None = None
 
     @field_serializer("timestamp")
     def serialize_ts(self, value: datetime):
@@ -117,5 +125,34 @@ class SetPointOut(BaseModel):
 
     @field_serializer("updated_at")
     def serialize_updated(self, value: datetime):
+        local = from_utc_naive(value)
+        return local.isoformat() if local else value.isoformat()
+
+
+class DisplayConfigOut(BaseModel):
+    config: dict
+    updated_by: str | None = None
+    updated_at: datetime | None = None
+
+
+class DisplayConfigUpdate(BaseModel):
+    config: dict
+
+
+class CommandAuditOut(BaseModel):
+    id: int
+    imei: str
+    command: str
+    status: str
+    triggered_by: str | None
+    source: str | None
+    sent_at: datetime
+    ack_at: datetime | None = None
+    response: str | None = None
+
+    @field_serializer("sent_at", "ack_at")
+    def serialize_dt(self, value: datetime | None):
+        if value is None:
+            return None
         local = from_utc_naive(value)
         return local.isoformat() if local else value.isoformat()
