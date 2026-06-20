@@ -36,7 +36,12 @@ class ConnectionRegistry:
     def __init__(self):
         self._by_imei: dict[str, socket.socket] = {}
         self._imei_by_addr: dict[tuple, str] = {}
+        self._conn_by_addr: dict[tuple, socket.socket] = {}
         self._lock = threading.Lock()
+
+    def register_pending(self, addr, conn):
+        with self._lock:
+            self._conn_by_addr[addr] = conn
 
     def register(self, addr, conn, imei: str):
         with self._lock:
@@ -48,21 +53,36 @@ class ConnectionRegistry:
                     pass
             self._by_imei[imei] = conn
             self._imei_by_addr[addr] = imei
+            self._conn_by_addr[addr] = conn
 
     def unregister(self, addr, conn):
         with self._lock:
             imei = self._imei_by_addr.pop(addr, None)
+            self._conn_by_addr.pop(addr, None)
             if imei and self._by_imei.get(imei) is conn:
                 del self._by_imei[imei]
             return imei
 
     def get(self, imei: str):
         with self._lock:
-            return self._by_imei.get(imei)
+            conn = self._by_imei.get(imei)
+            if conn:
+                return conn
+            # Un solo socket TCP activo: usarlo aunque aún no llegó telemetría con IMEI
+            if len(self._conn_by_addr) == 1:
+                return next(iter(self._conn_by_addr.values()))
+            return None
 
     def list_connected(self):
         with self._lock:
             return list(self._by_imei.keys())
+
+    def active_sessions(self) -> int:
+        with self._lock:
+            return len(self._conn_by_addr)
+
+    def can_send(self, imei: str) -> bool:
+        return self.get(imei) is not None
 
 
 registry = ConnectionRegistry()
@@ -188,6 +208,7 @@ def send_to_legacy_apis(parsed: dict):
 def handle_client(conn: socket.socket, addr):
     client_ip, client_port = addr
     print(f"Cliente conectado: {client_ip}:{client_port}")
+    registry.register_pending(addr, conn)
     notify_backend_terminal(None, "SYS", f"[INFO] Cliente conectado {client_ip}:{client_port}")
 
     buffer = ""
@@ -255,6 +276,7 @@ class SendCommand(BaseModel):
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
+    post_sync(f"{BACKEND_URL}/api/internal/disconnect_all", {})
     threading.Thread(target=tcp_server_loop, daemon=True).start()
     yield
 
@@ -264,19 +286,39 @@ app = FastAPI(title="TCP Bridge", lifespan=lifespan)
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "connected_devices": registry.list_connected()}
+    return {
+        "status": "ok",
+        "connected_devices": registry.list_connected(),
+        "active_sessions": registry.active_sessions(),
+    }
 
 
 @app.get("/internal/status")
 def status():
-    return {"connected": registry.list_connected()}
+    return {
+        "connected": registry.list_connected(),
+        "active_sessions": registry.active_sessions(),
+    }
+
+
+@app.get("/internal/can_send")
+def can_send(imei: str):
+    return {
+        "imei": imei,
+        "ready": registry.can_send(imei),
+        "connected": registry.list_connected(),
+        "active_sessions": registry.active_sessions(),
+    }
 
 
 @app.post("/internal/send")
 def send_command(body: SendCommand):
     conn = registry.get(body.imei)
     if not conn:
-        raise HTTPException(status_code=404, detail=f"Dispositivo {body.imei} no conectado")
+        raise HTTPException(
+            status_code=409,
+            detail=f"Dispositivo {body.imei} no conectado al puente TCP (sin sesión activa)",
+        )
 
     payload = body.command + ("\n" if body.append_newline else "")
     try:

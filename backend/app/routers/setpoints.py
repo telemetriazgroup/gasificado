@@ -5,12 +5,11 @@ from sqlalchemy import desc
 from sqlalchemy.orm import Session
 
 from app.auth import User, require_client_or_admin
-from app.config import settings
 from app.database import get_db
 from app.models import Device, SetPoint
 from app.schemas import SetPointOut, SetPointRequest
+from app.tcp_client import ensure_device_on_bridge, post_tcp_command
 from app.timezone_util import from_utc_naive, now_utc_naive
-import httpx
 
 router = APIRouter(prefix="/api/setpoints", tags=["setpoints"])
 
@@ -48,20 +47,12 @@ async def save_setpoint(
     command = f"SETPOINT,{temp_int},{body.gas_ppm}"
     applied = False
 
-    if body.apply_to_device and device.is_connected:
+    if body.apply_to_device:
         try:
-            async with httpx.AsyncClient(timeout=10) as client:
-                resp = await client.post(
-                    f"{settings.tcp_bridge_url}/internal/send",
-                    json={
-                        "imei": body.imei,
-                        "command": command,
-                        "append_newline": True,
-                    },
-                )
-                resp.raise_for_status()
-                applied = resp.json().get("success", False)
-        except Exception:
+            await ensure_device_on_bridge(db, body.imei)
+            result = await post_tcp_command(body.imei, command, True)
+            applied = result.get("success", False)
+        except HTTPException:
             applied = False
 
     row = SetPoint(

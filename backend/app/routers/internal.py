@@ -104,6 +104,13 @@ async def ingest_terminal(body: TerminalIn, db: Session = Depends(get_db)):
     return {"ok": True}
 
 
+@router.post("/disconnect_all")
+def disconnect_all(db: Session = Depends(get_db)):
+    db.query(Device).update({Device.is_connected: False})
+    db.commit()
+    return {"ok": True}
+
+
 @router.post("/connection")
 async def update_connection(body: ConnectionStatusIn, db: Session = Depends(get_db)):
     device = _upsert_device(db, body.imei, body.ip, body.connected)

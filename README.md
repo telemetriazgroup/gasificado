@@ -102,3 +102,14 @@ Solo después de eso arranca `tcp_bridge`. Usar `./start.sh` aplica la misma lim
 
 El script original sigue en el repositorio como referencia. En producción usar `tcp_bridge` dentro de Docker, que conserva el envío opcional a las APIs legacy configuradas en `.env`.
 # gasificado
+
+
+Rol	Usuario	Contraseña	Qué ve
+Administrador
+admin
+ProyectoZtrack2026!
+Terminal serial, comandos TCP, gráficas
+Cliente
+gasificado
+gasificado2026
+Tiempo real, histórico, set points (sin serial)

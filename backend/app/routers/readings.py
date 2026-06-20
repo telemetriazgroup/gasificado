@@ -9,7 +9,9 @@ from app.config import settings
 from app.database import get_db
 from app.models import CommandLog, Device, Reading
 from app.schemas import ChartData, ChartPoint, CommandRequest, CommandResponse, LatestData, ReadingOut
+from app.tcp_client import ensure_device_on_bridge, post_tcp_command
 from app.timezone_util import from_utc_naive, parse_incoming_timestamp
+from app.config import settings
 import httpx
 
 router = APIRouter(prefix="/api", tags=["readings"])
@@ -33,7 +35,7 @@ def list_devices(
 
 
 @router.get("/latest", response_model=LatestData)
-def get_latest(
+async def get_latest(
     imei: str | None = Query(None),
     db: Session = Depends(get_db),
     _user: User = Depends(require_client_or_admin),
@@ -42,6 +44,19 @@ def get_latest(
     if imei:
         device_q = device_q.filter(Device.imei == imei)
     device = device_q.order_by(desc(Device.last_seen_at)).first()
+
+    if device:
+        try:
+            async with httpx.AsyncClient(timeout=3) as client:
+                resp = await client.get(
+                    f"{settings.tcp_bridge_url}/internal/can_send",
+                    params={"imei": device.imei},
+                )
+                if resp.status_code == 200:
+                    device.is_connected = resp.json().get("ready", False)
+                    db.commit()
+        except httpx.HTTPError:
+            pass
 
     reading_q = db.query(Reading).filter(Reading.message_type == "sensor")
     if imei:
@@ -130,33 +145,27 @@ async def send_command(
     _user: User = Depends(require_admin),
 ):
     device = db.query(Device).filter(Device.imei == body.imei).first()
-    if not device or not device.is_connected:
-        raise HTTPException(status_code=409, detail="Dispositivo no conectado")
+    if not device:
+        raise HTTPException(status_code=404, detail="Dispositivo no registrado")
+
+    await ensure_device_on_bridge(db, body.imei)
 
     cmd_log = CommandLog(imei=body.imei, command=body.command, status="sent")
     db.add(cmd_log)
     db.commit()
 
     try:
-        async with httpx.AsyncClient(timeout=10) as client:
-            resp = await client.post(
-                f"{settings.tcp_bridge_url}/internal/send",
-                json={
-                    "imei": body.imei,
-                    "command": body.command,
-                    "append_newline": body.append_newline,
-                },
-            )
-            resp.raise_for_status()
-            data = resp.json()
-    except Exception as exc:
+        data = await post_tcp_command(body.imei, body.command, body.append_newline)
+    except HTTPException:
         cmd_log.status = "error"
         db.commit()
-        raise HTTPException(status_code=502, detail=f"Error enviando comando: {exc}") from exc
+        raise
 
     if not data.get("success"):
         cmd_log.status = "error"
         db.commit()
         raise HTTPException(status_code=502, detail=data.get("message", "Error desconocido"))
 
+    device.is_connected = True
+    db.commit()
     return CommandResponse(success=True, message="Comando enviado", command=body.command)
