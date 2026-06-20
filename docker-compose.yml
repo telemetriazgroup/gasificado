@@ -1,0 +1,49 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: gasificado
+      POSTGRES_PASSWORD: gasificado
+      POSTGRES_DB: gasificado
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U gasificado -d gasificado"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build: ./backend
+    environment:
+      DATABASE_URL: postgresql://gasificado:gasificado@db:5432/gasificado
+      TCP_BRIDGE_URL: http://tcp_bridge:8081
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "9070:8000"
+
+  tcp_bridge:
+    build: ./tcp_bridge
+    ports:
+      - "9970:9970"
+    environment:
+      TCP_HOST: "0.0.0.0"
+      TCP_PORT: "9970"
+      BACKEND_URL: http://backend:8000
+      HTTP_PORT: "8081"
+      LEGACY_API_URL: ${LEGACY_API_URL:-}
+      LEGACY_API_URL2: ${LEGACY_API_URL2:-}
+    depends_on:
+      - backend
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "8087:80"
+    depends_on:
+      - backend
+
+volumes:
+  pgdata:

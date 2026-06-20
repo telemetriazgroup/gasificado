@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Gasificado - Monitor TCP</title>
+  <link rel="stylesheet" href="/css/style.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+</head>
+<body>
+  <div class="app">
+    <div class="toolbar">
+      <label>
+        Dispositivo
+        <select id="deviceSelect">
+          <option value="">— seleccionar —</option>
+        </select>
+      </label>
+      <button class="btn" id="refreshDevices">Actualizar</button>
+      <span id="connectionStatus" class="status-dot disconnected">● Desconectado</span>
+    </div>
+
+    <div class="toolbar-row2">
+      <label><input type="checkbox" id="showTime" checked> Mostrar hora</label>
+      <label><input type="checkbox" id="appendNewline" checked> Agregar \n al enviar</label>
+      <button class="btn" id="clearTerminal" style="margin-left:auto">Limpiar pantalla</button>
+    </div>
+
+    <div class="terminal-wrap">
+      <div id="terminal" class="terminal"></div>
+    </div>
+
+    <div class="section-title">Comandos rápidos</div>
+    <div class="quick-grid">
+      <button class="btn quick-cmd" data-cmd="EVAPORADOR_ON">EVAPORADOR_ON</button>
+      <button class="btn quick-cmd" data-cmd="EVAPORADOR_OFF">EVAPORADOR_OFF</button>
+      <button class="btn quick-cmd" data-cmd="DOOR_CLOSE">DOOR_CLOSE</button>
+      <button class="btn quick-cmd" data-cmd="DOOR_OPEN">DOOR_OPEN</button>
+      <button class="btn quick-cmd" data-cmd="DOOR_STOP">DOOR_STOP</button>
+      <button class="btn quick-cmd" data-cmd="INYECCION">INYECCION</button>
+      <button class="btn quick-cmd" data-cmd="GET_DATA">GET_DATA</button>
+    </div>
+
+    <div class="section-title">Comando a enviar</div>
+    <div class="command-row">
+      <textarea id="commandInput" placeholder="Escriba un comando..."></textarea>
+      <div class="command-actions">
+        <button class="btn btn-primary" id="sendCommand">Enviar</button>
+        <button class="btn" id="clearInput">Limpiar</button>
+      </div>
+    </div>
+    <div class="hint">Enter = enviar | Shift+Enter = nueva línea | ↑/↓ = historial</div>
+
+    <div class="dashboard">
+      <div class="card">
+        <div class="label">Temperatura</div>
+        <div class="value" id="valTemp">— °C</div>
+      </div>
+      <div class="card">
+        <div class="label">Gas (PPM)</div>
+        <div class="value" id="valGas">—</div>
+      </div>
+      <div class="card">
+        <div class="label">Última conexión</div>
+        <div class="value" id="valLastSeen" style="font-size:1rem">—</div>
+      </div>
+      <div class="card">
+        <div class="label">IMEI</div>
+        <div class="value" id="valImei" style="font-size:1rem">—</div>
+      </div>
+    </div>
+
+    <div class="filters">
+      <label>Desde <input type="datetime-local" id="fromDate"></label>
+      <label>Hasta <input type="datetime-local" id="toDate"></label>
+      <button class="btn" id="loadChart">Actualizar gráficas</button>
+    </div>
+
+    <div class="charts">
+      <div class="chart-box">
+        <h3>Temperatura (°C)</h3>
+        <canvas id="tempChart"></canvas>
+      </div>
+      <div class="chart-box">
+        <h3>Gas (PPM)</h3>
+        <canvas id="gasChart"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <script src="/js/app.js"></script>
+</body>
+</html>
