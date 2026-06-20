@@ -24,6 +24,22 @@ services:
     ports:
       - "9070:8000"
 
+  port_cleaner:
+    image: docker:27-cli
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        ids=$$(docker ps -q --filter publish=9970 2>/dev/null || true)
+        if [ -n "$$ids" ]; then
+          echo "Deteniendo contenedor(es) previos en puerto 9970: $$ids"
+          docker stop --time 5 $$ids || true
+          sleep 2
+        fi
+        echo "Puerto 9970 listo"
+    restart: "no"
+
   tcp_bridge:
     build: ./tcp_bridge
     ports:
@@ -36,7 +52,10 @@ services:
       LEGACY_API_URL: ${LEGACY_API_URL:-}
       LEGACY_API_URL2: ${LEGACY_API_URL2:-}
     depends_on:
-      - backend
+      backend:
+        condition: service_started
+      port_cleaner:
+        condition: service_completed_successfully
 
   frontend:
     build: ./frontend

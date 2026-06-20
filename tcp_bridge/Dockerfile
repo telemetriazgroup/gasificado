@@ -5,8 +5,9 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY bridge.py .
+COPY bridge.py entrypoint.sh ./
+RUN chmod +x entrypoint.sh
 
 EXPOSE 9970 8081
 
-CMD ["python", "bridge.py"]
+ENTRYPOINT ["./entrypoint.sh"]

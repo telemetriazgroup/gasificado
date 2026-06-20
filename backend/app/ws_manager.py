@@ -3,6 +3,8 @@ import json
 from datetime import datetime
 from typing import Any
 
+from app.timezone_util import from_utc_naive
+
 
 class ConnectionManager:
     def __init__(self):
@@ -20,11 +22,13 @@ class ConnectionManager:
                 self.active.remove(websocket)
 
     async def broadcast(self, event_type: str, payload: dict):
+        local_ts = datetime.utcnow().isoformat()
         message = json.dumps(
             {
                 "type": event_type,
                 "payload": payload,
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": local_ts,
+                "timezone": "America/Bogota",
             },
             default=str,
         )
@@ -41,3 +45,4 @@ class ConnectionManager:
 
 
 terminal_manager = ConnectionManager()
+realtime_manager = ConnectionManager()

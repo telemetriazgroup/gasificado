@@ -4,23 +4,28 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import desc
 from sqlalchemy.orm import Session
 
+from app.auth import User, require_admin, require_client_or_admin
+from app.config import settings
 from app.database import get_db
 from app.models import CommandLog, Device, Reading
 from app.schemas import ChartData, ChartPoint, CommandRequest, CommandResponse, LatestData, ReadingOut
-from app.config import settings
+from app.timezone_util import from_utc_naive, parse_incoming_timestamp
 import httpx
 
 router = APIRouter(prefix="/api", tags=["readings"])
 
 
 @router.get("/devices")
-def list_devices(db: Session = Depends(get_db)):
+def list_devices(
+    db: Session = Depends(get_db),
+    _user: User = Depends(require_client_or_admin),
+):
     devices = db.query(Device).order_by(desc(Device.last_seen_at)).all()
     return [
         {
             "imei": d.imei,
             "last_ip": d.last_ip,
-            "last_seen_at": d.last_seen_at,
+            "last_seen_at": from_utc_naive(d.last_seen_at).isoformat() if d.last_seen_at else None,
             "is_connected": d.is_connected,
         }
         for d in devices
@@ -28,7 +33,11 @@ def list_devices(db: Session = Depends(get_db)):
 
 
 @router.get("/latest", response_model=LatestData)
-def get_latest(imei: str | None = Query(None), db: Session = Depends(get_db)):
+def get_latest(
+    imei: str | None = Query(None),
+    db: Session = Depends(get_db),
+    _user: User = Depends(require_client_or_admin),
+):
     device_q = db.query(Device)
     if imei:
         device_q = device_q.filter(Device.imei == imei)
@@ -54,8 +63,8 @@ def get_latest(imei: str | None = Query(None), db: Session = Depends(get_db)):
             last_cmd = {
                 "command": cmd.command,
                 "status": cmd.status,
-                "sent_at": cmd.sent_at,
-                "ack_at": cmd.ack_at,
+                "sent_at": from_utc_naive(cmd.sent_at).isoformat() if cmd.sent_at else None,
+                "ack_at": from_utc_naive(cmd.ack_at).isoformat() if cmd.ack_at else None,
             }
 
     return LatestData(
@@ -73,14 +82,15 @@ def get_readings(
     message_type: str | None = Query(None),
     limit: int = Query(500, le=5000),
     db: Session = Depends(get_db),
+    _user: User = Depends(require_client_or_admin),
 ):
     q = db.query(Reading)
     if imei:
         q = q.filter(Reading.imei == imei)
     if from_date:
-        q = q.filter(Reading.received_at >= from_date)
+        q = q.filter(Reading.received_at >= parse_incoming_timestamp(from_date))
     if to_date:
-        q = q.filter(Reading.received_at <= to_date)
+        q = q.filter(Reading.received_at <= parse_incoming_timestamp(to_date))
     if message_type:
         q = q.filter(Reading.message_type == message_type)
     return q.order_by(desc(Reading.received_at)).limit(limit).all()
@@ -92,18 +102,19 @@ def get_chart_data(
     from_date: datetime | None = Query(None, alias="from"),
     to_date: datetime | None = Query(None, alias="to"),
     db: Session = Depends(get_db),
+    _user: User = Depends(require_client_or_admin),
 ):
     q = db.query(Reading).filter(Reading.imei == imei, Reading.message_type == "sensor")
     if from_date:
-        q = q.filter(Reading.received_at >= from_date)
+        q = q.filter(Reading.received_at >= parse_incoming_timestamp(from_date))
     if to_date:
-        q = q.filter(Reading.received_at <= to_date)
+        q = q.filter(Reading.received_at <= parse_incoming_timestamp(to_date))
     rows = q.order_by(Reading.received_at).all()
     return ChartData(
         imei=imei,
         points=[
             ChartPoint(
-                timestamp=r.received_at,
+                timestamp=from_utc_naive(r.received_at),
                 temperature=r.temperature,
                 gas_ppm=r.gas_ppm,
             )
@@ -113,7 +124,11 @@ def get_chart_data(
 
 
 @router.post("/commands", response_model=CommandResponse)
-async def send_command(body: CommandRequest, db: Session = Depends(get_db)):
+async def send_command(
+    body: CommandRequest,
+    db: Session = Depends(get_db),
+    _user: User = Depends(require_admin),
+):
     device = db.query(Device).filter(Device.imei == body.imei).first()
     if not device or not device.is_connected:
         raise HTTPException(status_code=409, detail="Dispositivo no conectado")
@@ -137,7 +152,7 @@ async def send_command(body: CommandRequest, db: Session = Depends(get_db)):
     except Exception as exc:
         cmd_log.status = "error"
         db.commit()
-        raise HTTPException(status_code=502, detail=f"Error enviando comando: {exc}")
+        raise HTTPException(status_code=502, detail=f"Error enviando comando: {exc}") from exc
 
     if not data.get("success"):
         cmd_log.status = "error"

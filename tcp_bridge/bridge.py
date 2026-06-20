@@ -11,11 +11,14 @@ import re
 import socket
 import threading
 from contextlib import asynccontextmanager
+from zoneinfo import ZoneInfo
 
 import httpx
 import uvicorn
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
+
+LOCAL_TZ = ZoneInfo("America/Bogota")
 
 HOST = os.getenv("TCP_HOST", "0.0.0.0")
 PORT = int(os.getenv("TCP_PORT", "9970"))
@@ -110,6 +113,14 @@ def parse_chunks(text: str) -> list[dict]:
     return results
 
 
+def local_timestamp_iso():
+    return datetime.datetime.now(LOCAL_TZ).isoformat()
+
+
+def local_time_hms():
+    return datetime.datetime.now(LOCAL_TZ).strftime("%H:%M:%S")
+
+
 def post_sync(url: str, payload: dict):
     try:
         with httpx.Client(timeout=5) as client:
@@ -123,7 +134,7 @@ def notify_backend_telemetry(parsed: dict, client_ip: str):
     payload = {
         **parsed,
         "client_ip": client_ip,
-        "timestamp": datetime.datetime.utcnow().isoformat(),
+        "timestamp": local_timestamp_iso(),
     }
     if parsed.get("imei"):
         post_sync(
@@ -144,7 +155,7 @@ def notify_backend_terminal(imei: str | None, direction: str, message: str):
             "imei": imei,
             "direction": direction,
             "message": message,
-            "timestamp": datetime.datetime.utcnow().isoformat(),
+            "timestamp": local_timestamp_iso(),
         },
     )
 
@@ -184,7 +195,7 @@ def handle_client(conn: socket.socket, addr):
 
     def process_text(text: str):
         nonlocal imei
-        timestamp = datetime.datetime.now().strftime("%H:%M:%S")
+        timestamp = local_time_hms()
         for parsed in parse_chunks(text):
             if parsed.get("imei"):
                 imei = parsed["imei"]
@@ -270,7 +281,7 @@ def send_command(body: SendCommand):
     payload = body.command + ("\n" if body.append_newline else "")
     try:
         conn.sendall(payload.encode("utf-8"))
-        ts = datetime.datetime.now().strftime("%H:%M:%S")
+        ts = local_time_hms()
         notify_backend_terminal(body.imei, "TX", f"[{ts}] {body.command}")
         return {"success": True, "message": "Comando enviado"}
     except OSError as exc:

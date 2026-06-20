@@ -3,32 +3,44 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Gasificado - Monitor TCP</title>
-  <link rel="stylesheet" href="/css/style.css">
+  <title>Gasificado - Monitor</title>
+  <base href="/gasificado/">
+  <link rel="stylesheet" href="css/style.css">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
 </head>
 <body>
-  <div class="app">
+  <div id="loginScreen" class="login-screen">
+    <form id="loginForm" class="login-box">
+      <h1>Gasificado</h1>
+      <p class="login-sub">Monitor TCP · GMT-5</p>
+      <label>Usuario<input type="text" id="loginUser" autocomplete="username" required></label>
+      <label>Contraseña<input type="password" id="loginPass" autocomplete="current-password" required></label>
+      <button type="submit" class="btn btn-primary btn-block">Ingresar</button>
+      <p id="loginError" class="login-error hidden"></p>
+      <p class="login-hint">Admin: admin · Cliente: gasificado</p>
+    </form>
+  </div>
+
+  <div id="adminApp" class="app hidden">
+    <div class="header-bar">
+      <strong>Administrador</strong>
+      <span id="adminUser"></span>
+      <button class="btn" id="logoutAdmin">Salir</button>
+    </div>
+
     <div class="toolbar">
-      <label>
-        Dispositivo
-        <select id="deviceSelect">
-          <option value="">— seleccionar —</option>
-        </select>
-      </label>
+      <label>Dispositivo<select id="deviceSelect"><option value="">— seleccionar —</option></select></label>
       <button class="btn" id="refreshDevices">Actualizar</button>
       <span id="connectionStatus" class="status-dot disconnected">● Desconectado</span>
     </div>
 
     <div class="toolbar-row2">
-      <label><input type="checkbox" id="showTime" checked> Mostrar hora</label>
+      <label><input type="checkbox" id="showTime" checked> Mostrar hora (GMT-5)</label>
       <label><input type="checkbox" id="appendNewline" checked> Agregar \n al enviar</label>
       <button class="btn" id="clearTerminal" style="margin-left:auto">Limpiar pantalla</button>
     </div>
 
-    <div class="terminal-wrap">
-      <div id="terminal" class="terminal"></div>
-    </div>
+    <div class="terminal-wrap"><div id="terminal" class="terminal"></div></div>
 
     <div class="section-title">Comandos rápidos</div>
     <div class="quick-grid">
@@ -52,22 +64,10 @@
     <div class="hint">Enter = enviar | Shift+Enter = nueva línea | ↑/↓ = historial</div>
 
     <div class="dashboard">
-      <div class="card">
-        <div class="label">Temperatura</div>
-        <div class="value" id="valTemp">— °C</div>
-      </div>
-      <div class="card">
-        <div class="label">Gas (PPM)</div>
-        <div class="value" id="valGas">—</div>
-      </div>
-      <div class="card">
-        <div class="label">Última conexión</div>
-        <div class="value" id="valLastSeen" style="font-size:1rem">—</div>
-      </div>
-      <div class="card">
-        <div class="label">IMEI</div>
-        <div class="value" id="valImei" style="font-size:1rem">—</div>
-      </div>
+      <div class="card"><div class="label">Temperatura</div><div class="value" id="valTemp">— °C</div></div>
+      <div class="card"><div class="label">Gas (PPM)</div><div class="value" id="valGas">—</div></div>
+      <div class="card"><div class="label">Última conexión</div><div class="value" id="valLastSeen" style="font-size:1rem">—</div></div>
+      <div class="card"><div class="label">IMEI</div><div class="value" id="valImei" style="font-size:1rem">—</div></div>
     </div>
 
     <div class="filters">
@@ -75,19 +75,76 @@
       <label>Hasta <input type="datetime-local" id="toDate"></label>
       <button class="btn" id="loadChart">Actualizar gráficas</button>
     </div>
-
     <div class="charts">
-      <div class="chart-box">
-        <h3>Temperatura (°C)</h3>
-        <canvas id="tempChart"></canvas>
+      <div class="chart-box"><h3>Temperatura (°C)</h3><canvas id="tempChart"></canvas></div>
+      <div class="chart-box"><h3>Gas (PPM)</h3><canvas id="gasChart"></canvas></div>
+    </div>
+  </div>
+
+  <div id="clientApp" class="app hidden">
+    <div class="header-bar">
+      <strong>Cliente Gasificado</strong>
+      <span id="clientUser"></span>
+      <button class="btn" id="logoutClient">Salir</button>
+    </div>
+
+    <div class="tabs">
+      <button class="tab active" data-tab="realtime">Tiempo real</button>
+      <button class="tab" data-tab="history">Histórico</button>
+      <button class="tab" data-tab="setpoints">Set points</button>
+    </div>
+
+    <div id="tabRealtime" class="tab-panel">
+      <div class="toolbar">
+        <label>Dispositivo<select id="clientDeviceSelect"><option value="">— seleccionar —</option></select></label>
+        <span id="clientConnectionStatus" class="status-dot disconnected">● Desconectado</span>
       </div>
-      <div class="chart-box">
-        <h3>Gas (PPM)</h3>
-        <canvas id="gasChart"></canvas>
+      <div class="dashboard dashboard-large">
+        <div class="card card-live"><div class="label">Temperatura actual</div><div class="value" id="liveTemp">— °C</div></div>
+        <div class="card card-live"><div class="label">Gas actual (PPM)</div><div class="value" id="liveGas">—</div></div>
+        <div class="card card-live"><div class="label">Set point temp.</div><div class="value" id="liveTempSp">— °C</div></div>
+        <div class="card card-live"><div class="label">Set point gas</div><div class="value" id="liveGasSp">— PPM</div></div>
+      </div>
+      <div class="card" style="margin-top:12px">
+        <div class="label">Última actualización (GMT-5)</div>
+        <div id="liveUpdated" class="value" style="font-size:1rem">—</div>
+        <div class="label" style="margin-top:8px">IMEI</div>
+        <div id="liveImei" class="value" style="font-size:1rem">—</div>
+      </div>
+    </div>
+
+    <div id="tabHistory" class="tab-panel hidden">
+      <div class="filters">
+        <label>Dispositivo<select id="histDeviceSelect"><option value="">— seleccionar —</option></select></label>
+        <label>Desde <input type="datetime-local" id="histFrom"></label>
+        <label>Hasta <input type="datetime-local" id="histTo"></label>
+        <button class="btn" id="histSearch">Buscar</button>
+      </div>
+      <div class="charts">
+        <div class="chart-box"><h3>Temperatura</h3><canvas id="histTempChart"></canvas></div>
+        <div class="chart-box"><h3>Gas PPM</h3><canvas id="histGasChart"></canvas></div>
+      </div>
+      <div class="history-table-wrap">
+        <table class="history-table">
+          <thead><tr><th>Fecha (GMT-5)</th><th>Temp °C</th><th>Gas PPM</th><th>IP</th></tr></thead>
+          <tbody id="histTableBody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div id="tabSetpoints" class="tab-panel hidden">
+      <div class="setpoint-form card">
+        <h3>Programar set points</h3>
+        <label>Dispositivo<select id="spDeviceSelect"><option value="">— seleccionar —</option></select></label>
+        <label>Temperatura objetivo (°C)<input type="number" id="spTemp" step="0.1" min="0"></label>
+        <label>Gas objetivo (PPM)<input type="number" id="spGas" step="1" min="0"></label>
+        <label><input type="checkbox" id="spApply" checked> Enviar al dispositivo conectado</label>
+        <button class="btn btn-primary" id="spSave">Guardar set points</button>
+        <p id="spMsg" class="hint"></p>
       </div>
     </div>
   </div>
 
-  <script src="/js/app.js"></script>
+  <script src="js/app.js"></script>
 </body>
 </html>

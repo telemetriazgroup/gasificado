@@ -52,3 +52,15 @@ class TerminalLog(Base):
     direction: Mapped[str] = mapped_column(String(10))
     message: Mapped[str] = mapped_column(Text)
     logged_at: Mapped[datetime] = mapped_column(DateTime, index=True, default=datetime.utcnow)
+
+
+class SetPoint(Base):
+    __tablename__ = "setpoints"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    imei: Mapped[str] = mapped_column(String(20), index=True)
+    temperature: Mapped[float] = mapped_column(Float)
+    gas_ppm: Mapped[int] = mapped_column(Integer)
+    updated_by: Mapped[str] = mapped_column(String(50))
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    applied: Mapped[bool] = mapped_column(default=False)

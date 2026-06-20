@@ -1,6 +1,8 @@
 from datetime import datetime
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, field_serializer
+
+from app.timezone_util import from_utc_naive
 
 
 class TelemetryIn(BaseModel):
@@ -37,6 +39,11 @@ class ReadingOut(BaseModel):
     message_type: str
     received_at: datetime
 
+    @field_serializer("received_at")
+    def serialize_received(self, value: datetime):
+        local = from_utc_naive(value)
+        return local.isoformat() if local else value.isoformat()
+
     class Config:
         from_attributes = True
 
@@ -46,6 +53,13 @@ class DeviceOut(BaseModel):
     last_ip: str | None
     last_seen_at: datetime | None
     is_connected: bool
+
+    @field_serializer("last_seen_at")
+    def serialize_seen(self, value: datetime | None):
+        if value is None:
+            return None
+        local = from_utc_naive(value)
+        return local.isoformat() if local else value.isoformat()
 
     class Config:
         from_attributes = True
@@ -68,6 +82,11 @@ class ChartPoint(BaseModel):
     temperature: float | None
     gas_ppm: int | None
 
+    @field_serializer("timestamp")
+    def serialize_ts(self, value: datetime):
+        local = from_utc_naive(value) if value.tzinfo is None else value
+        return local.isoformat()
+
 
 class ChartData(BaseModel):
     imei: str
@@ -78,3 +97,25 @@ class LatestData(BaseModel):
     device: DeviceOut | None
     latest_reading: ReadingOut | None
     last_command: dict | None = None
+    timezone: str = "America/Bogota"
+
+
+class SetPointRequest(BaseModel):
+    imei: str
+    temperature: float
+    gas_ppm: int
+    apply_to_device: bool = True
+
+
+class SetPointOut(BaseModel):
+    imei: str
+    temperature: float
+    gas_ppm: int
+    updated_by: str
+    updated_at: datetime
+    applied: bool
+
+    @field_serializer("updated_at")
+    def serialize_updated(self, value: datetime):
+        local = from_utc_naive(value)
+        return local.isoformat() if local else value.isoformat()
